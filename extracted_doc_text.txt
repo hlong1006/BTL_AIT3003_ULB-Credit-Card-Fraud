@@ -1,0 +1,259 @@
+Đồ án: Phát hiện rửa tiền trên đồ thị giao dịch Bitcoin động (Elliptic)
+1. Tổng quan
+Bài toán: Cho đồ thị giao dịch Bitcoin theo thời gian, phát hiện giao dịch phi pháp (illicit) khi nhãn ít, lệch lớp nặng, và phân phối dữ liệu thay đổi theo thời gian.
+Gắn với môn học: Mining Graph Data (11), Outlier Detection (3), Advanced Classification (2), Mining Data Streams (8), Social Network Analysis (12).
+Câu hỏi nghiên cứu:
+Giao dịch illicit khác licit ở điểm nào về cấu trúc đồ thị?
+GNN, feature cấu trúc và mô hình hybrid có hơn mô hình cây trên feature gốc không?
+Mô hình suy giảm thế nào khi dữ liệu trôi (sau timestep ~43), và chiến lược cập nhật nào bền nhất?
+Với chi phí nghiệp vụ cụ thể, nên chọn ngưỡng nào?
+2. Dataset
+Chính: Elliptic (Kaggle: “Elliptic Data Set”)
+203.769 node (mỗi node là một giao dịch, không phải ví), 234.355 cạnh có hướng (dòng bitcoin từ giao dịch này sang giao dịch kia).
+49 timestep (mỗi bước cách nhau ~2 tuần). Cạnh chỉ nối các giao dịch trong cùng timestep, nên đồ thị thực chất là 49 snapshot rời nhau.
+166 feature: 94 cục bộ (gồm timestep) + 72 tổng hợp từ láng giềng 1-hop. Feature đã ẩn danh.
+Nhãn: ~2% illicit (4.545), ~21% licit (42.019), ~77% unknown. Trong số node có nhãn, illicit chiếm khoảng 9-10%.
+3 file: elliptic_txs_features.csv, elliptic_txs_classes.csv, elliptic_txs_edgelist.csv.
+Tùy chọn:
+Elliptic++ (GitHub): thêm đồ thị địa chỉ ví, để phân tích theo ví thật (peeling chain đúng nghĩa “ví trung gian”).
+IBM AML (Kaggle, bản HI-Small): kiểm tra tổng quát hóa, nhưng cần ~16GB RAM. Bỏ nếu thiếu thời gian.
+3. Nguyên tắc xuyên suốt
+Chia theo thời gian: train timestep 1-34 (validation lấy 29-34 cuối train), test 35-49. Không random split.
+Node unknown: giữ trong đồ thị cho message passing, nhưng không tính loss và không tính metric. Không coi unknown là licit.
+Chống rò rỉ: không dùng timestep làm feature dự đoán; fit scaler và chọn hyperparameter chỉ trên train/val; feature đồ thị tính theo từng snapshot.
+Độ tin cậy: chạy nhiều seed, báo trung bình ± độ lệch chuẩn.
+Trung thực kết quả: mọi giả thuyết (GNN thắng, hybrid thắng, over-smoothing...) viết thành câu hỏi thực nghiệm, báo số thật dù ra sao.
+4. Kiến trúc pipeline
+Dữ liệu thô (features, classes, edgelist)
+   │
+   ▼
+[A] Nạp & tiền xử lý ─► chia theo timestep ─► dựng đồ thị (PyG Data, NetworkX/igraph)
+   │
+   ├─► [B1] Feature gốc: 94 cục bộ / 166 đầy đủ
+   ├─► [B2] Feature cấu trúc: degree, PageRank, k-core, clustering, motif
+   └─► [B3] Embedding: Node2Vec/DeepWalk, embedding từ GNN
+   │
+   ▼
+[C] Mô hình: Tabular │ GNN │ Hybrid │ Unsupervised
+   │
+   ▼
+[D] Đánh giá theo từng timestep (PR-AUC, F1 illicit)
+   │
+   ▼
+[E] Drift & streaming: đo drift, sliding window, ADWIN, online learning
+   │
+   ▼
+[F] Tối ưu ngưỡng theo hàm chi phí
+   │
+   ▼
+[G] Giải thích & phân tích lỗi (SHAP, GNNExplainer)
+   │
+   ▼
+[H] Demo Streamlit + báo cáo
+5. Bốn bài toán chi tiết
+Bài toán 1: Graph EDA (chứng minh cần dùng đồ thị)
+Việc cần làm:
+Phân bố nhãn và illicit rate theo timestep; tỷ lệ unknown theo timestep.
+Thống kê từng snapshot: số node, số cạnh, số thành phần liên thông, phân phối degree (thường theo power-law).
+So sánh licit vs illicit trên: in-degree, out-degree, PageRank, clustering coefficient, k-core number. Dùng boxplot/violin và kiểm định Mann-Whitney U (kèm effect size, vì mẫu lớn thì p-value luôn nhỏ).
+Homophily: tỷ lệ cạnh illicit-illicit so với kỳ vọng nếu nhãn phân bố ngẫu nhiên.
+Motif / cấu trúc dòng tiền: chuỗi dài một-vào-một-ra (peeling chain), fan-out rồi fan-in (tán ra rồi gom lại), vòng, triangle. Đếm tần suất theo lớp, vẽ vài subgraph điển hình bằng pyvis/Gephi.
+Phân tích khoảng cách: illicit cách illicit gần nhất bao nhiêu hop.
+Đầu ra: bảng và biểu đồ định lượng cho thấy cấu trúc có tín hiệu phân biệt. Lưu ý ghi rõ: node là giao dịch nên “chuỗi giao dịch” chứ không phải “chuỗi ví”.
+Bài toán 2: Phân loại node (mất cân bằng, bán giám sát)
+Nhóm A, Tabular baseline (Logistic Regression, Random Forest, XGBoost/LightGBM), ba cấu hình:
+94 feature cục bộ
+166 feature đầy đủ
+94 + feature cấu trúc từ bài toán 1 (xem có thay được 72 feature tổng hợp không)
+Nhóm B, GNN (PyTorch Geometric): GCN, GraphSAGE, GAT.
+Xử lý imbalance: weighted cross-entropy hoặc focal loss.
+Thử độ sâu 1, 2, 3, 4 lớp để kiểm chứng over-smoothing, đừng mặc định nó xảy ra.
+Loss chỉ trên node có nhãn trong train; message passing trên toàn bộ node.
+Nếu còn thời gian: EvolveGCN hoặc GNN + GRU cho yếu tố thời gian.
+Nhóm C, Hybrid: lấy embedding từ GNN đã train, ghép với feature gốc, đưa vào XGBoost. Câu hỏi: hybrid có hơn tabular và GNN thuần không?
+Nhóm D, Unsupervised (baseline cho Outlier Detection): Isolation Forest, LOF, autoencoder (lỗi tái tạo làm điểm bất thường). Câu hỏi: không có nhãn thì bắt được bao nhiêu?
+Giải thích kết quả: nếu cây ngang hoặc hơn GNN, một lý do khả dĩ là 72 feature tổng hợp đã thực hiện sẵn vai trò của một lớp message passing. Hãy kiểm chứng bằng so sánh 94 vs 166 feature thay vì chỉ giả định.
+Bài toán 3: Concept drift và streaming
+Đo suy giảm: vẽ F1 illicit, precision, recall theo từng timestep 35-49. Xác định điểm sụp thực tế từ dữ liệu của mày (đừng viết trước con số).
+Chứng minh drift: KS test hoặc PSI trên các feature quan trọng giữa train và từng timestep test; theo dõi phân phối điểm số dự đoán; t-SNE/PCA so sánh phân phối.
+So sánh chiến lược xử lý:
+S1: train một lần, không cập nhật (baseline)
+S2: sliding window retraining (cửa sổ k timestep gần nhất)
+S3: retrain khi ADWIN/Page-Hinkley báo drift
+S4: mô hình online (Hoeffding Tree, Adaptive Random Forest trong river)
+S5: chỉ chỉnh lại ngưỡng (chiến lược để so sánh, không phải cách chữa drift)
+Đo thêm: chi phí tính toán (thời gian retrain), và nêu hạn chế thực tế: nhãn mới đến chậm, nên sliding window giả định có nhãn ngay là hơi lý tưởng. Có thể mô phỏng độ trễ nhãn 1-2 timestep.
+Về nguyên nhân: sự kiện dark market bị đóng quanh timestep 43 là giả thuyết từ tài liệu (paper Elliptic gốc), dataset không tự chứng minh. Phải ghi như vậy.
+Bài toán 4: Đánh giá theo chi phí
+Metric: PR-AUC, precision/recall/F1 của lớp illicit. Không dùng accuracy (nói rõ tập đánh giá là node có nhãn, nơi đoán toàn licit đã được ~90%).
+Hàm chi phí: Cost = C_FN × FN + C_FP × FP. Quét nhiều tỷ lệ C_FN/C_FP (ví dụ 1, 5, 10, 50, 100), chọn ngưỡng tối thiểu hóa chi phí trên validation.
+Biểu đồ: đường Precision-Recall, và “recall đạt được theo số cảnh báo phải điều tra”.
+Kiểm tra độ bền: ngưỡng tối ưu trên validation còn tốt trên test trước và sau điểm drift không?
+Câu hỏi nghiệp vụ: chấp nhận bao nhiêu cảnh báo sai để bắt được X% giao dịch illicit?
+6. Giải thích và phân tích lỗi
+SHAP cho XGBoost: feature nào quan trọng nhất; feature cục bộ hay tổng hợp?
+GNNExplainer/PGExplainer cho GNN: cạnh và láng giềng nào quyết định.
+False negative: illicit bị bỏ sót có đặc điểm gì (ít kết nối, ngụy trang trong cụm licit, thuộc loại hành vi mới sau drift)?
+Case study: 2-3 ca phát hiện đúng, vẽ subgraph quanh node để kể câu chuyện dòng tiền.
+8. Công nghệ
+Lõi: Python, PyTorch, PyTorch Geometric, scikit-learn, XGBoost/LightGBM
+Đồ thị: NetworkX (đủ cho từng snapshot nhỏ), igraph nếu cần nhanh hơn
+Streaming: river
+Giải thích: shap, GNNExplainer (có sẵn trong PyG)
+Theo dõi thí nghiệm: Weights & Biases hoặc MLflow
+Demo: Streamlit + pyvis
+Máy: Elliptic chạy được trên CPU, GNN nhanh hơn trên Colab/Kaggle GPU miễn phí
+9. Cấu trúc repo gợi ý
+elliptic-aml/
+├── data/              # raw + processed (không commit file lớn)
+├── notebooks/         # 01_eda, 02_graph_eda, 03_baselines, ...
+├── src/
+│   ├── data.py        # load, chia theo timestep
+│   ├── graph_features.py
+│   ├── models/        # tabular.py, gnn.py, hybrid.py, unsup.py
+│   ├── drift.py       # PSI/KS, ADWIN, sliding window
+│   ├── cost.py        # hàm chi phí, tối ưu ngưỡng
+│   └── explain.py
+├── app/               # Streamlit
+├── configs/
+└── report/
+
+Các bước thực hiện chi tiết
+Bước 0: Chuẩn bị môi trường
+Tạo repo theo cấu trúc đã đưa, cài torch, torch_geometric, scikit-learn, xgboost, networkx, river, shap, streamlit.
+Cố định seed (numpy, torch, random) và lưu vào file config.
+Đọc paper gốc “Anti-Money Laundering in Bitcoin: Experimenting with Graph Convolutional Networks” (Weber et al., 2019) để biết kết quả tham chiếu.
+Đầu ra: repo chạy được, requirements.txt.
+Bước 1: Nạp dữ liệu
+Tải Elliptic từ Kaggle, có 3 file: features, classes, edgelist.
+File features không có header: cột 0 là txId, cột 1 là timestep, cột 2 trở đi là feature (93 feature cục bộ + timestep = 94, rồi 72 feature tổng hợp).
+File classes: 1 = illicit, 2 = licit, unknown = chưa gán nhãn. Map lại thành 1 / 0 / -1.
+Map txId sang chỉ số 0..N-1 để dùng cho PyG, rồi đổi edgelist theo chỉ số này.
+Kiểm tra: 203.769 node, 234.355 cạnh, 49 timestep; số node illicit/licit khớp (~4.545 / ~42.019).
+Bước 2: Chia dữ liệu theo thời gian
+Train: timestep 1-34, trong đó validation là 29-34. Test: 35-49.
+Tạo mask train_mask, val_mask, test_mask, chỉ gồm node có nhãn.
+Giữ riêng một mask “toàn bộ node” cho message passing.
+Kiểm tra: không node nào nằm ở 2 tập; cạnh chỉ nối node cùng timestep.
+Bước 3: EDA cơ bản
+Biểu đồ số node, số cạnh, illicit rate, tỷ lệ unknown theo từng timestep.
+Xem phân phối một vài feature quan trọng, kiểm tra giá trị thiếu và scale.
+Đầu ra: notebook 01_eda kèm 4-5 biểu đồ.
+Bước 4: Graph EDA (Bài toán 1)
+Dựng từng snapshot bằng NetworkX (có hướng).
+Tính in/out-degree, PageRank, clustering coefficient (trên bản vô hướng), k-core.
+So sánh licit vs illicit bằng boxplot/violin, Mann-Whitney U và effect size.
+Tính homophily: tỷ lệ cạnh illicit-illicit thực tế so với kỳ vọng ngẫu nhiên.
+Đếm motif: chuỗi một-vào-một-ra (peeling), fan-out rồi fan-in, vòng, triangle; so tần suất giữa hai lớp.
+Vẽ 2-3 subgraph illicit điển hình bằng pyvis.
+Đầu ra: bảng thống kê + biểu đồ, kết luận “cấu trúc có/không có tín hiệu” (có thể kết quả là tín hiệu yếu, vẫn báo trung thực).
+Bước 5: Baseline tabular (E2)
+Chuẩn hóa (scaler fit trên train), bỏ cột timestep khỏi feature.
+Chạy LogReg, RF, XGBoost trên 3 cấu hình: 93 feature cục bộ, 165 feature đầy đủ, cục bộ + feature cấu trúc (làm ở bước 6).
+Dùng class weight hoặc scale_pos_weight cho imbalance.
+Tune hyperparameter trên validation (grid nhỏ hoặc Optuna).
+Đánh giá trên test: PR-AUC, precision/recall/F1 lớp illicit.
+Đầu ra: bảng baseline, đây là mốc để mọi thứ khác so sánh.
+Bước 6: Feature cấu trúc và embedding
+Tính feature đồ thị theo từng snapshot (degree, PageRank, k-core, clustering, đếm motif), ghép vào bảng feature theo txId.
+Thêm neighbor aggregation 2-hop (mean/max feature láng giềng) để xem có hơn 72 feature 1-hop gốc không.
+Node2Vec/DeepWalk chạy riêng từng snapshot (không giám sát, không dùng nhãn).
+Chạy lại XGBoost với các feature mới.
+Đầu ra: bảng so sánh “có/không có feature cấu trúc”.
+Bước 7: GNN (E3)
+Dựng torch_geometric.data.Data với toàn bộ node, cạnh, feature, nhãn.
+Cài GCN, GraphSAGE, GAT (2 lớp trước, hidden 64-128, dropout).
+Loss chỉ tính trên train_mask, dùng weighted cross-entropy hoặc focal loss.
+Huấn luyện full-batch (đồ thị vừa đủ nhỏ), early stopping theo PR-AUC trên validation.
+Thử độ sâu 1, 2, 3, 4 lớp để kiểm chứng over-smoothing.
+Chạy 5-10 seed, báo trung bình ± độ lệch chuẩn.
+Đầu ra: bảng GCN/SAGE/GAT vs tabular, biểu đồ F1 theo độ sâu.
+Bước 8: Hybrid và unsupervised (E4, E5)
+Hybrid: lấy embedding lớp ẩn của GNN đã train, ghép với feature gốc, huấn luyện XGBoost. Lưu ý embedding của node train có thể “quá khớp” nhãn, nên cân nhắc lấy embedding từ model chưa nhìn nhãn của chính node đó (hoặc kiểm tra bằng validation).
+Unsupervised: Isolation Forest, LOF, autoencoder, dùng điểm bất thường làm score, đo PR-AUC dù không dùng nhãn khi train.
+Đầu ra: bảng so sánh hybrid vs GNN vs cây, và unsupervised vs supervised.
+Bước 9: Đánh giá theo timestep và drift (E6)
+Với mô hình tốt nhất, vẽ F1/precision/recall illicit theo từng timestep 35-49, xác định điểm sụp.
+Tính KS test hoặc PSI trên feature quan trọng giữa train và từng timestep test, vẽ heatmap.
+Cài 5 chiến lược:
+S1: không cập nhật
+S2: sliding window (thử k = 3, 5, 10 timestep)
+S3: retrain khi ADWIN/Page-Hinkley báo drift
+S4: mô hình online trong river
+S5: chỉ chỉnh ngưỡng
+Mô phỏng độ trễ nhãn 1-2 timestep (chỉ được dùng nhãn của timestep đã “cũ”).
+Đo thời gian retrain của từng chiến lược.
+Đầu ra: biểu đồ F1 theo timestep của 5 chiến lược trên cùng một hình, kèm bảng chi phí tính toán.
+Bước 10: Tối ưu ngưỡng theo chi phí (E7)
+Lấy xác suất dự đoán trên validation.
+Đặt Cost = C_FN × FN + C_FP × FP, quét tỷ lệ C_FN/C_FP (1, 5, 10, 50, 100).
+Với mỗi tỷ lệ, chọn ngưỡng tối thiểu hóa chi phí trên validation.
+Áp ngưỡng đó lên test, so sánh chi phí trước và sau điểm drift.
+Vẽ PR curve và đường “recall theo số cảnh báo cần điều tra”.
+Đầu ra: bảng ngưỡng tối ưu theo từng tỷ lệ chi phí, kết luận nghiệp vụ.
+Bước 11: Giải thích và phân tích lỗi
+SHAP cho XGBoost: top feature, so feature cục bộ với feature tổng hợp.
+GNNExplainer cho vài node illicit được phát hiện đúng.
+Lọc false negative, so đặc điểm với true positive (degree, timestep, feature SHAP).
+Chọn 2-3 case study, vẽ subgraph quanh node.
+Đầu ra: hình SHAP, hình subgraph, đoạn phân tích lỗi.
+Bước 12: (Tùy chọn) Mở rộng
+Chạy lại pipeline rút gọn trên IBM AML HI-Small hoặc Elliptic++ để kiểm tra tổng quát hóa. Chỉ làm nếu các bước trên đã xong chắc.
+Bước 13: Demo
+Streamlit: thanh chọn timestep, bảng top-N giao dịch đáng ngờ, đồ thị con quanh node chọn, biểu đồ SHAP cho node đó.
+Nạp sẵn model và kết quả đã tính, không train trong demo.
+Bước 14: Báo cáo và slide
+Cấu trúc: Giới thiệu, Dữ liệu, Phương pháp, Thực nghiệm (E1-E7), Thảo luận, Hạn chế, Kết luận.
+Mỗi thí nghiệm trả lời đúng một câu hỏi nghiên cứu, kèm bảng/biểu đồ.
+Phần hạn chế nên nói rõ: node là giao dịch, nguyên nhân drift là giả thuyết, nhãn thực tế đến chậm.
+Người
+Vai trò chính
+Đầu việc cụ thể (đã cân bằng tải)
+File đầu ra bắt buộc (Deliverables)
+P0
+Data + Hạ tầng + Tối ưu chi phí (Bài 4)
+• Tuần 1: Nạp dữ liệu, map txId, chia timestep (1-28 / 29-34 / 35-49), tạo masks, xuất file dữ liệu chuẩn dùng chung.
+• Viết hàm đánh giá chuẩn (PR-AUC, F1 illicit) & chạy baseline XGBoost đầu tiên.
+• Tuần 2: Nhận file dự đoán của P2 & P3 để làm Bài 4 (hàm chi phí Cost = C_FN*FN + C_FP*FP, quét ngưỡng tối ưu, vẽ đường Recall theo số cảnh báo) + chạy baseline Unsupervised (Isolation Forest / Autoencoder).
+• processed_data.pt (hoặc .npz)
+• metrics.py
+• baseline_xgb_probs.npy
+• Bảng & biểu đồ tối ưu ngưỡng chi phí
+P1
+Bài 1: Graph EDA & Feature cấu trúc
+• Dựng 49 snapshot đồ thị bằng NetworkX.
+• Phân tích cấu trúc Licit vs Illicit (Degree, PageRank, k-core, Clustering, Homophily, đếm motif peeling chain/fan-out) kèm kiểm định Mann-Whitney U.
+• Vẽ 2–3 subgraph điển hình bằng pyvis.
+• Xuất toàn bộ feature cấu trúc ra file cho P2 dùng.
+• graph_features.parquet (đúng thứ tự 0..203768)
+• Bộ biểu đồ EDA & file HTML subgraph pyvis
+P2
+Bài 2a: Tabular + Hybrid + SHAP
+• Chạy Logistic Regression, Random Forest, XGBoost trên 3 cấu hình: 93 cục bộ, 165 đầy đủ, và 93 + graph_features (của P1).
+• Nhận vector embedding từ P3 để ghép với feature gốc chạy mô hình Hybrid.
+• Chạy SHAP giải thích feature quan trọng & phân tích lỗi (False Negative).
+• Bảng benchmark Tabular & Hybrid
+• Biểu đồ SHAP
+• best_tabular_probs.npy (gửi P0 & P4)
+P3
+Bài 2b: GNN (PyTorch Geometric)
+• Xây dựng và huấn luyện GCN, GraphSAGE, GAT (loss chỉ tính trên train_mask, message passing trên toàn đồ thị).
+• Thử nghiệm độ sâu 1, 2, 3, 4 lớp để kiểm chứng over-smoothing, chạy nhiều seed lấy trung bình ± độ lệch chuẩn.
+• Chạy GNNExplainer giải thích nút/cạnh quan trọng.
+• Xuất file xác suất dự đoán và ma trận embedding lớp ẩn.
+• Bảng benchmark GNN & biểu đồ theo độ sâu
+• best_gnn_probs.npy (gửi P0 & P4)
+• gnn_embeddings.npy (gửi P2)
+P4
+Bài 3: Concept Drift & Streaming
+• Vẽ đường F1 / Precision / Recall qua từng timestep 35..49 của model P0/P2/P3 để xác định điểm sụp đổ.
+• Tính KS-test / PSI chứng minh phân phối dữ liệu bị trôi (drift).
+• Cài đặt và so sánh 5 chiến lược: S1 (tĩnh), S2 (Sliding Window), S3 (ADWIN/Page-Hinkley), S4 (Online learning với river: Hoeffding Tree, Adaptive RF), S5 (chỉnh ngưỡng) + mô phỏng độ trễ nhãn 1–2 timestep.
+• Biểu đồ F1 theo thời gian của 5 chiến lược
+• Heatmap PSI/KS-test
+• Bảng đo thời gian retra
+Quy tắc phối hợp 3 mốc thời gian (để không ai phải chờ ai):
+Hết Ngày 2: P0 phải chốt xong processed_data.pt, metrics.py và baseline_xgb_probs.npy. Ngay khi có file này, P1, P2, P3, P4 bắt đầu code song song trên cùng một chuẩn dữ liệu (P0 & P4 dùng tạm baseline_xgb_probs.npy để code sẵn pipeline chi phí và drift).
+Hết Ngày 6: P1 nộp graph_features.parquet cho P2; P3 nộp gnn_embeddings.npy cho P2 và best_gnn_probs.npy cho P0, P4.
+Hết Ngày 9: P2 nộp best_tabular_probs.npy cho P0, P4. Trong ngày 10–11, P0 và P4 chỉ việc thay file xác suất thật vào code có sẵn là ra toàn bộ biểu đồ cuối cùng để ghép vào báo cáo và slide.
+hihi nampia
