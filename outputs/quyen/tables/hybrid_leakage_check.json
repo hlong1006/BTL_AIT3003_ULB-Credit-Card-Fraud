@@ -1,0 +1,22 @@
+{
+  "note": "GNN trained on ts1-28 (train_mask), early stopping on val (ts29-34). Test ts35-49 is out-of-sample for the GNN -> hybrid test metrics clean. Train-node embeddings are in-sample for the GNN; train metrics never reported.",
+  "gnn_probs_val_pr_auc": 0.7934422913216709,
+  "gnn_probs_test_pr_auc": 0.6552997414159596,
+  "variants": {
+    "emb128": {
+      "val_pr_auc": 0.9256691032964891,
+      "test_pr_auc": 0.6520307049549493,
+      "val_minus_test_pr_auc": 0.2736383983415398
+    },
+    "local93+emb128": {
+      "val_pr_auc": 0.975675893593573,
+      "test_pr_auc": 0.7528274407396878,
+      "val_minus_test_pr_auc": 0.22284845285388521
+    },
+    "full165+emb128": {
+      "val_pr_auc": 0.9794372471244382,
+      "test_pr_auc": 0.7818627754934927,
+      "val_minus_test_pr_auc": 0.19757447163094555
+    }
+  }
+}

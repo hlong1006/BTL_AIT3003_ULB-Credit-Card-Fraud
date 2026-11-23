@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.ipynb_checkpoints/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs & temp
+*.log
+logs/
+tmp/
+temp/
+
+# Raw data (689MB features CSV - download from Kaggle, do NOT commit)
+data/raw/*
+!data/raw/.gitkeep
+
+# NOTE (P2 branch): processed_data.npz, shared inputs (graph_features.parquet,
+# gnn_embeddings.npy, probs) and outputs/quyen results ARE committed on purpose
+# so the branch is self-contained and reproducible.
