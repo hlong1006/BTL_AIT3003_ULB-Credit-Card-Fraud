@@ -1,0 +1,15 @@
+# Python và Jupyter
+__pycache__/
+*.py[cod]
+.venv/
+.ipynb_checkpoints/
+
+# Dữ liệu và kết quả tạo khi chạy, theo bố cục của P0
+/data/raw/*
+/data/processed/*
+/outputs/figures/*
+/outputs/tables/*
+/outputs/models/*
+/outputs/predictions/*
+/outputs/subgraphs/*
+!.gitkeep
