@@ -1,0 +1,3 @@
+metric,licit_count,illicit_count,licit_median,illicit_median,licit_p95,illicit_p95,mann_whitney_u_illicit,p_value,rank_biserial
+in_degree,42019,4545,1.0,1.0,6.0,1.0,90293567.5,5.5524281538405885e-11,-0.054400556550574075
+out_degree,42019,4545,1.0,1.0,2.0,2.0,77335837.5,1.4416783602086515e-118,-0.19010039227107456

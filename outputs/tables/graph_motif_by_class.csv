@@ -1,0 +1,13 @@
+motif,class,node_count,member_count,member_rate
+one_in_one_out_chain,licit,42019,4659,0.11087841214688593
+one_in_one_out_chain,illicit,4545,643,0.14147414741474149
+fan_out,licit,42019,9799,0.23320402674980367
+fan_out,illicit,4545,305,0.0671067106710671
+fan_in,licit,42019,8434,0.2007187224826864
+fan_in,illicit,4545,175,0.03850385038503851
+fan_out_fan_in_diamond,licit,42019,1707,0.04062447940217521
+fan_out_fan_in_diamond,illicit,4545,129,0.02838283828382838
+directed_cycle,licit,42019,0,0.0
+directed_cycle,illicit,4545,0,0.0
+triangle,licit,42019,1678,0.03993431542873462
+triangle,illicit,4545,26,0.00572057205720572
