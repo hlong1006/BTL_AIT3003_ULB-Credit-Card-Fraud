@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.venv/
+# dữ liệu + kết quả chia sẻ qua Drive, không push
+data/processed/*
+data/external/*
+outputs/*
+!data/external/.gitkeep
+!outputs/.gitkeep
